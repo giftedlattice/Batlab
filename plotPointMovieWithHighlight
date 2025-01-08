@@ -1,0 +1,115 @@
+%%Function allows user to select a point to track as a 3D movie while
+%%allowing all other points in the first frame to be static points of
+%%reference in the video
+
+function plotPointMovieWithHighlight()
+    % Open a file selection dialog to choose the CSV file
+    [fileName, filePath] = uigetfile('*.csv', 'Select the CSV File with 3D Points');
+    if isequal(fileName, 0)
+        disp('User canceled the file selection.');
+        return;
+    end
+    csvFilePath = fullfile(filePath, fileName);
+
+    % Read the CSV file into a table
+    dataTable = readtable(csvFilePath);
+
+    % Get column names to identify valid points
+    columnNames = dataTable.Properties.VariableNames;
+
+    % Extract unique point indices by checking '_X' columns
+    xColumns = contains(columnNames, '_X'); % Identify columns ending with '_X'
+    xColumnNames = columnNames(xColumns);   % Get the corresponding column names
+    pointIndices = unique(extractBetween(xColumnNames, 'pt', '_X')); % Extract point indices
+
+    % Extract the first row of data for static markers (second row in CSV)
+    firstRowData = dataTable(1, :);
+
+    % Prepare static marker coordinates
+    staticX = [];
+    staticY = [];
+    staticZ = [];
+    for i = 1:length(pointIndices)
+        xColName = ['pt', pointIndices{i}, '_X'];
+        yColName = ['pt', pointIndices{i}, '_Y'];
+        zColName = ['pt', pointIndices{i}, '_Z'];
+        if ismember(xColName, columnNames) && ismember(yColName, columnNames) && ismember(zColName, columnNames)
+            xVal = firstRowData.(xColName);
+            yVal = firstRowData.(yColName);
+            zVal = firstRowData.(zColName);
+            if ~isnan(xVal) && ~isnan(yVal) && ~isnan(zVal)
+                staticX(end+1) = xVal;
+                staticY(end+1) = yVal;
+                staticZ(end+1) = zVal;
+            end
+        end
+    end
+
+    % Display available points and let the user select one
+    [pointSelection, ok] = listdlg('ListString', pointIndices, ...
+                                   'SelectionMode', 'single', ...
+                                   'PromptString', 'Select a point to view:', ...
+                                   'ListSize', [200, 300]);
+    if ~ok
+        disp('User canceled the point selection.');
+        return;
+    end
+
+    % Construct the selected point's column names
+    selectedPoint = pointIndices{pointSelection};
+    xColName = ['pt', selectedPoint, '_X'];
+    yColName = ['pt', selectedPoint, '_Y'];
+    zColName = ['pt', selectedPoint, '_Z'];
+
+    % Check if the columns for the selected point exist
+    if ismember(xColName, columnNames) && ismember(yColName, columnNames) && ismember(zColName, columnNames)
+        % Extract the coordinates for the selected point
+        X = dataTable.(xColName);
+        Y = dataTable.(yColName);
+        Z = dataTable.(zColName);
+    else
+        errordlg('Selected point does not have valid X, Y, Z columns.');
+        return;
+    end
+
+    % Remove frames with NaN values
+    validFrames = ~isnan(X) & ~isnan(Y) & ~isnan(Z);
+    X = X(validFrames);
+    Y = Y(validFrames);
+    Z = Z(validFrames);
+
+    % Check if there are valid frames
+    if isempty(X)
+        errordlg('No valid frames available for the selected point.');
+        return;
+    end
+
+    % Create a 3D scatter plot with static markers
+    figure;
+    scatter3(staticX, staticY, staticZ, 100, 'filled', 'MarkerEdgeColor', 'k', ...
+             'MarkerFaceColor', [0.5, 0.5, 0.5], 'DisplayName', 'Static Points');
+    hold on;
+    xlabel('X');
+    ylabel('Y');
+    zlabel('Z');
+    title(sprintf('Trajectory of Point %s with Highlighted Frame', selectedPoint));
+    grid on;
+    axis equal;
+
+    % Plot all frames of the selected point as static markers
+    hFrames = scatter3(X, Y, Z, 50, 'filled', 'MarkerEdgeColor', 'b', ...
+                       'MarkerFaceColor', 'c', 'DisplayName', 'All Frames');
+    
+    % Highlight the current frame dynamically
+    hHighlight = plot3(NaN, NaN, NaN, 'ro', 'MarkerSize', 10, 'LineWidth', 2, ...
+                       'DisplayName', 'Highlighted Frame');
+    legend show;
+
+    % Animate the point frame by frame
+    for i = 1:length(X)
+        % Highlight the current frame
+        set(hHighlight, 'XData', X(i), 'YData', Y(i), 'ZData', Z(i)); % Update highlighted position
+        pause(0.1); % Delay between frames
+    end
+    hold off;
+end
